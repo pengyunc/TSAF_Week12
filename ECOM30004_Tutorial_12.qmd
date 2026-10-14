@@ -1,0 +1,1045 @@
+---
+title: |
+  <div class="tight-title">
+    <div>ECOM30004/90004</div>
+    <div>Time Series Analysis and Forecasting</div>
+     <div class="spacer"></div> <!-- blank line -->
+    <div class="bold">Tutorial 12</div>
+
+    <div class="spacer"></div> <!-- blank line -->
+
+    <div class="author">Tutor: Pengyun (Kevin) Chen</div>
+    <div class="author">University of Melbourne</div>
+    <div class="author">Semester 2, 2026</div>
+  </div>
+
+  
+format:
+  revealjs:
+    theme: simple
+    self-contained: true
+    chalkboard: false
+    width: 1300
+    height: 950
+    footer: 'Access Slides: `pengyunc.github.io/TSAF_Week12`'
+    title-slide-attributes:
+      data-background-color: "#000F46"
+    slide-number: true
+    center-title-slide: true
+    toc: false
+    css: styles.css
+    callout-appearance: simple
+    background-transition: fade
+    callout-icon: true
+    transition: slide
+    scrollable: true
+    code-block-height: 800px
+    code-line-numbers: true
+    mathjax: "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"
+    html-math-method: mathjax
+    execute:
+      echo: true
+      eval: true
+      enabled: true
+---
+
+## Notice
+
+::: {.callout-warning title="Conditions of Use"}
+
+- This document is intended for personal use and is NOT meant to be shared on the internet (e.g. Studocu, ThinkSwap, StudentVIP, Coursehero, etc.)
+- Do not share this document with anyone, even if they are enrolled in ECOM30004/90004.
+- Official course materials, such as lecture slides, tutorial sheets and prescribed readings should always be your primary point of reference.
+
+:::
+<div style="height: 0.2em;"></div>
+ - Slides accessible here: `pengyunc.github.io/TSAF_Week12`
+ - Download HTML versions here: [Dropbox Link](https://www.dropbox.com/scl/fo/aoxoud5ex0j42hsrod3dg/ADblAt_jJ9hpESZME9FDcWc?rlkey=0s0oyf1y3uokzvlhbzxe2yy3g&st=kx2yupzr&dl=0)
+ - <blue>My consultations for Weeks 11 and 12:</blue>
+ $$\boxed{\;\textsf{Wednesday 3pm-4pm, FBE 455}\;}$$
+
+
+## This tutorial: Impulse Response Analysis with VAR {auto-animate="true"}
+
+
+<blue>In this tutorial, we estimate and interpret impulse responses from VAR models, apply Cholesky factorisation to identify structural shocks, and examine how tax policy changes influence GDP growth under different variable orderings.</blue>
+
+<div style="height: 0.5em;"></div> 
+
+:::{.callout-note title="Activities"} 
+
+- <blue>Exercise 1:</blue> VAR Estimation, Cholesky factorisation and Interpretation
+- <blue>Exercise 2:</blue> Sensitivity of Impulse Responses to Cholesky Ordering
+- <blue>Exercise 3:</blue> Practical Application - Effect of Tax Policy on Economic Growth
+:::
+
+
+## Initialisation {auto-animate="true"}
+
+:::{.callout-note}
+Refer again to the data file `TGY.csv`, which contains the data from Lecture 11 and Self-directed Activities 11 on the U.S. real per-capita quarterly time series (1980Q1-2024Q2).
+
+- <blue>$\operatorname{GDP}_{t}$:</blue> Gross Domestic Product
+- <blue>$\operatorname{Tax}_{t}$:</blue> total tax revenue
+- <blue>$\operatorname{Govt}_{t}$:</blue> total government spending
+:::
+
+<div style="height: 0.2em;"></div>
+
+Import the data and set up for pre-COVID modelling (to 2019Q4) as follows:
+```{r}
+dt <- read.csv("TGY.csv")
+GDP <- ts(dt$GDP, start=c(1960,1), end=c(2024,2), frequency=4)
+Tax <- ts(dt$Tax, start=c(1960,1), end=c(2024,2), frequency=4)
+Govt <- ts(dt$Govt, start=c(1960,1), end=c(2024,2), frequency=4)
+
+GDP <- window(GDP, start=c(1980,1), end=c(2019,4))
+Tax <- window(Tax, start=c(1980,1), end=c(2019,4))
+Govt <- window(Govt, start=c(1980,1), end=c(2019,4))
+
+DGDP <- diff(GDP)*100  # pct growth per qtr
+DTax <- diff(Tax)*100
+DGovt <- diff(Govt)*100
+DY <- data.frame(DTax=DTax, DGovt=DGovt, DGDP=DGDP)
+```
+
+## Exercise 1 {auto-animate="true"}
+
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+<div style="height: 0.5em;"></div>
+
+:::{.fragment}
+<blue>What is Cholesky factorisation, and why would we want to use it?</blue>
+:::
+
+:::{.fragment}
+Consider the VAR(3) model:
+
+$$\underbrace{\begin{bmatrix}
+\Delta\mathrm{Tax}_{t}\\\Delta\mathrm{Govt}_{t}\\\Delta\mathrm{GDP}_{t}
+\end{bmatrix}}_{\mathbf{Y}_{t}}=\underbrace{\begin{bmatrix}\nu_{1}\\\nu_{2}\\\nu_{3}\end{bmatrix}}_{\nu}+\sum_{p=1}^{3}\left(
+\underbrace{\begin{bmatrix}
+\Phi_{1,1}^{(p)} & \Phi_{1,2}^{(p)} & \Phi_{1,3}^{(p)}\\
+\Phi_{2,1}^{(p)} & \Phi_{2,2}^{(p)} & \Phi_{2,3}^{(p)}\\
+\Phi_{3,1}^{(p)} & \Phi_{3,2}^{(p)} & \Phi_{3,3}^{(p)}
+\end{bmatrix}}_{\Phi_{p}}\underbrace{\begin{bmatrix}
+\Delta\mathrm{Tax}_{t-p}\\\Delta\mathrm{Govt}_{t-p}\\\Delta\mathrm{GDP}_{t-p}
+\end{bmatrix}}_{\mathbf{Y}_{t-p}}\right)+\underbrace{\begin{bmatrix}
+U_{1,t}\\
+U_{2,t}\\
+U_{3,t}
+\end{bmatrix}}_{\mathbf{U}_{t}}$$
+:::
+
+:::{.fragment}
+$$\mathbf{Y}_{t}=\nu+\Phi_{1}\mathbf{Y}_{t-1}+\Phi_{2}\mathbf{Y}_{t-2}+\Phi_{3}\mathbf{Y}_{t-3}+\mathbf{U}_{t}$$
+:::
+
+:::{.fragment}
+:::{.callout-tip}
+<green>Our goal:</green> We would like to obtain a set of mutually uncorrelated (orthogonal) structural shocks that can be interpreted causally, so that we can trace how a unit of shock to one variable affects the others over time. <green>$\to$ Make IRFs economically meaningful</green>
+:::
+:::
+
+
+## Exercise 1 {auto-animate="true"}
+
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+<div style="height: 0.5em;"></div>
+<blue>What is Cholesky factorisation, and why would we want to use it?</blue>
+
+Consider the VAR(3) model:
+$$\mathbf{Y}_{t}=\nu+\Phi_{1}\mathbf{Y}_{t-1}+\Phi_{2}\mathbf{Y}_{t-2}+\Phi_{3}\mathbf{Y}_{t-3}+\mathbf{U}_{t}$$
+
+:::{.fragment}
+The data implies that $\mathbf{U}_{t}$ follows a variance-covariance matrix $\mathbf{\Sigma}$:
+
+::: {style="font-size: 67%;"}
+$$\underset{\substack{\textsf{conditional}\\\textsf{variance matrix}}}{\operatorname{var}(\mathbf{U_{t}}\mid\mathscr{Y}_{t-1})}=\mathbf{\Sigma}=\begin{bmatrix}
+\operatorname{var}(\Delta\mathrm{Tax}_{t}\mid\mathscr{Y}_{t-1}) & \operatorname{cov}(\Delta\mathrm{Tax}_{t}, \Delta\operatorname{Govt}_{t}\mid\mathscr{Y}_{t-1}) & 
+\operatorname{cov}(\Delta\mathrm{Tax}_{t}, \Delta\operatorname{GDP}_{t}\mid\mathscr{Y}_{t-1})\\ \operatorname{cov}(\Delta\mathrm{Govt}_{t}, \Delta\operatorname{Tax}_{t}\mid\mathscr{Y}_{t-1}) & 
+\operatorname{var}(\Delta\mathrm{Govt}_{t}\mid\mathscr{Y}_{t-1}) &
+\operatorname{cov}(\Delta\mathrm{Govt}_{t}, \Delta\operatorname{GDP}_{t}\mid\mathscr{Y}_{t-1})\\
+\operatorname{cov}(\Delta\mathrm{GDP}_{t}, \Delta\operatorname{Tax}_{t}\mid\mathscr{Y}_{t-1}) & 
+\operatorname{cov}(\Delta\mathrm{GDP}_{t}, \Delta\operatorname{Govt}_{t}\mid\mathscr{Y}_{t-1}) &
+\operatorname{var}(\Delta\mathrm{GDP}_{t}\mid\mathscr{Y}_{t-1}) 
+\end{bmatrix}$$
+:::
+
+:::
+
+:::{.fragment}
+where 
+$$\mathbf{U}_{t}=\begin{bmatrix}
+U_{Tax,t}\\
+U_{Govt,t}\\
+U_{GDP,t}
+\end{bmatrix}$$
+:::
+
+## Exercise 1 {auto-animate="true"}
+
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+<div style="height: 0.5em;"></div>
+<blue>What is Cholesky factorisation, and why would we want to use it?</blue>
+
+Consider the VAR(3) model:
+$$\mathbf{Y}_{t}=\nu+\Phi_{1}\mathbf{Y}_{t-1}+\Phi_{2}\mathbf{Y}_{t-2}+\Phi_{3}\mathbf{Y}_{t-3}+\mathbf{U}_{t}$$
+$$\mathbf{U}_{t}=\begin{bmatrix}
+U_{Tax,t}&
+U_{Govt,t}&
+U_{GDP,t}
+\end{bmatrix}^{\top}$$
+<div class="horizontal-line"></div>
+
+<blue>The problem:</blue>
+
+:::{.incremental}
+- The conditional var-cov matrix $\mathbf{\Sigma}$ usually suggest that $U_{Tax,t}$, $U_{Govt,t}$ and $U_{GDP,t}$ are correlated (in a cross-sectional sense).
+
+- This means that $U_{Tax,t}$ (disturbances to total tax revenue) might not solely represent shocks originated from $\operatorname{Tax}_{t}$, *without loss of generality*.
+
+- <purple>$\implies$ $U_{Tax,t}$ might also contain shocks from the rest of the variables (i.e. from  $U_{Govt,t}$ and $U_{GDP,t}$)</purple>
+
+:::
+
+
+## Exercise 1 {auto-animate="true"}
+
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+<div style="height: 0.5em;"></div>
+<blue>What is Cholesky factorisation, and why would we want to use it?</blue>
+
+Consider the VAR(3) model:
+$$\mathbf{Y}_{t}=\nu+\Phi_{1}\mathbf{Y}_{t-1}+\Phi_{2}\mathbf{Y}_{t-2}+\Phi_{3}\mathbf{Y}_{t-3}+\mathbf{U}_{t}$$
+
+The data implies that $\mathbf{U}_{t}$ follows a variance-covariance matrix $\mathbf{\Sigma}$:
+
+::: {style="font-size: 67%;"}
+$$\underset{\substack{\textsf{conditional}\\\textsf{variance matrix}}}{\operatorname{var}(\mathbf{U_{t}}\mid\mathscr{Y}_{t-1})}=\mathbf{\Sigma}=\begin{bmatrix}
+\operatorname{var}(\Delta\mathrm{Tax}_{t}\mid\mathscr{Y}_{t-1}) & \operatorname{cov}(\Delta\mathrm{Tax}_{t}, \Delta\operatorname{Govt}_{t}\mid\mathscr{Y}_{t-1}) & 
+\operatorname{cov}(\Delta\mathrm{Tax}_{t}, \Delta\operatorname{GDP}_{t}\mid\mathscr{Y}_{t-1})\\ \operatorname{cov}(\Delta\mathrm{Govt}_{t}, \Delta\operatorname{Tax}_{t}\mid\mathscr{Y}_{t-1}) & 
+\operatorname{var}(\Delta\mathrm{Govt}_{t}\mid\mathscr{Y}_{t-1}) &
+\operatorname{cov}(\Delta\mathrm{Govt}_{t}, \Delta\operatorname{GDP}_{t}\mid\mathscr{Y}_{t-1})\\
+\operatorname{cov}(\Delta\mathrm{GDP}_{t}, \Delta\operatorname{Tax}_{t}\mid\mathscr{Y}_{t-1}) & 
+\operatorname{cov}(\Delta\mathrm{GDP}_{t}, \Delta\operatorname{Govt}_{t}\mid\mathscr{Y}_{t-1}) &
+\operatorname{var}(\Delta\mathrm{GDP}_{t}\mid\mathscr{Y}_{t-1}) 
+\end{bmatrix}$$
+:::
+
+where <blue>we assume that the elements of $\mathbf{U}_{t}$ is a linear combination of three independent (orthogalised) shocks of mean 0 and variance 1:</blue>
+$$\mathbf{U}_{t}=\begin{bmatrix}
+U_{Tax,t}\\
+U_{Govt,t}\\
+U_{GDP,t}
+\end{bmatrix}=\color{blue}{\begin{bmatrix}
+c_{11} & c_{12} & c_{13}\\
+c_{21} & c_{22} & c_{23}\\
+c_{31} & c_{32} & c_{33}
+\end{bmatrix}\begin{bmatrix}
+\varepsilon_{Tax,t}\\
+\varepsilon_{Govt,t}\\
+\varepsilon_{GDP,t}
+\end{bmatrix}=C^{\top}\varepsilon_{t}\quad\textsf{where}\quad\operatorname{var}(\varepsilon_{t})=I}$$
+
+
+
+## Exercise 1 {auto-animate="true"}
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+<div style="height: 0.5em;"></div>
+<blue>What is Cholesky factorisation, and why would we want to use it?</blue>
+
+Consider the VAR(3) model:
+$$\mathbf{Y}_{t}=\nu+\Phi_{1}\mathbf{Y}_{t-1}+\Phi_{2}\mathbf{Y}_{t-2}+\Phi_{3}\mathbf{Y}_{t-3}+\mathbf{U}_{t}$$
+$$\mathbf{U}_{t}=\begin{bmatrix}
+U_{Tax,t}\\
+U_{Govt,t}\\
+U_{GDP,t}
+\end{bmatrix}=\color{blue}{\begin{bmatrix}
+c_{11} & c_{12} & c_{13}\\
+c_{21} & c_{22} & c_{23}\\
+c_{31} & c_{32} & c_{33}
+\end{bmatrix}\begin{bmatrix}
+\varepsilon_{Tax,t}\\
+\varepsilon_{Govt,t}\\
+\varepsilon_{GDP,t}
+\end{bmatrix}=C^{\top}\varepsilon_{t}\quad\textsf{where}\quad\operatorname{var}(\varepsilon_{t})=I}$$
+
+:::{.fragment}
+Given that $\operatorname{var}(\varepsilon_{t})=\mathbb{E}(\varepsilon_{t}\varepsilon_{t}^{\top})$, then:
+:::
+
+:::{.fragment}
+$$\operatorname{var}(\varepsilon_{t})=\mathbb{E}(\varepsilon_{t}\varepsilon_{t}^{\top})=I=\begin{bmatrix}1 & 0 & 0\\ 0 & 1 & 0\\ 0 & 0 & 1\end{bmatrix}$$
+the off-diagonal entries are 0 $\to$ shocks are uncorrelated (orthogonal)
+:::
+
+
+## Exercise 1 {auto-animate="true"}
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+<div style="height: 0.5em;"></div>
+<blue>What is Cholesky factorisation, and why would we want to use it?</blue>
+
+Consider the VAR(3) model:
+$$\mathbf{Y}_{t}=\nu+\Phi_{1}\mathbf{Y}_{t-1}+\Phi_{2}\mathbf{Y}_{t-2}+\Phi_{3}\mathbf{Y}_{t-3}+\mathbf{U}_{t}$$
+$$\mathbf{U}_{t}=\begin{bmatrix}
+U_{Tax,t}\\
+U_{Govt,t}\\
+U_{GDP,t}
+\end{bmatrix}=\color{blue}{\begin{bmatrix}
+c_{11} & c_{12} & c_{13}\\
+c_{21} & c_{22} & c_{23}\\
+c_{31} & c_{32} & c_{33}
+\end{bmatrix}\begin{bmatrix}
+\varepsilon_{Tax,t}\\
+\varepsilon_{Govt,t}\\
+\varepsilon_{GDP,t}
+\end{bmatrix}=C^{\top}\varepsilon_{t}\quad\textsf{where}\quad\operatorname{var}(\varepsilon_{t})=I}$$
+
+
+Given that $\operatorname{var}(\varepsilon_{t})=\mathbb{E}(\varepsilon_{t}\varepsilon_{t}^{\top})$ and matrix transpose formula $(AB)^{\top}=B^{\top}A^{\top}$, then:
+
+
+<blue>
+$$\operatorname{var}(C^{\top}\varepsilon_{t})=\operatorname{var}(\mathbf{U}_{t})=\mathbb{E}[(C^{\top}\varepsilon_{t})(C^{\top}\varepsilon_{t})^{\top}]$$
+</blue>
+
+:::{.fragment}
+<blue>
+$$\implies\operatorname{var}(C^{\top}\varepsilon_{t})=\mathbf{\Sigma}=\mathbb{E}[C^{\top}\varepsilon_{t}\varepsilon_{t}^{\top}C]=C^{\top}\underbrace{\mathbb{E}[\varepsilon_{t}\varepsilon_{t}^{\top}]}_{=I}C=C^{\top}C$$
+</blue>
+:::
+
+:::{.fragment}
+thus <blue>$\operatorname{var}(\mathbf{U}_{t})\equiv\mathbf{\Sigma}=C^{\top}C$</blue> [<teal>$\to$ how can we obtain $C$?</teal>]{.fragment}
+:::
+<div style="height: 1.5em;"></div>
+
+## Exercise 1 {auto-animate="true"}
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+<div style="height: 0.5em;"></div>
+<blue>What is Cholesky factorisation, and why would we want to use it?</blue>
+
+Consider the VAR(3) model:
+$$\mathbf{Y}_{t}=\nu+\Phi_{1}\mathbf{Y}_{t-1}+\Phi_{2}\mathbf{Y}_{t-2}+\Phi_{3}\mathbf{Y}_{t-3}+\mathbf{U}_{t}$$
+$$\mathbf{U}_{t}=C^{\top}\varepsilon_{t}\quad\text{where}\quad\operatorname{var}(\varepsilon_{t})=I\quad\implies\color{teal}{\quad\operatorname{var}(\mathbf{U}_{t})=\mathbf{\Sigma}=C^{\top}C}$$
+<teal>The question is, how can we obtain $C$?</teal> [<blue>$\to$ One way is **Cholesky Factorisation**</blue>]{.fragment}
+
+:::{.fragment}
+<div class="horizontal-line"></div>
+<blue>**Cholesky Factorisation:**</blue> Assumes $C$ is an *upper-triangular* matrix
+:::
+
+<div style="height: 0.05em;"></div>
+:::{.fragment}
+<blue>Why would we use it?</blue> The Cholesky factorisation is NOT the unique way of factorising $\mathbf{\Sigma}=C^{\top}C$, but it is widely adopted because it is *simple to compute*.
+:::
+<div style="height: 1em;"></div>
+
+## Exercise 1 {auto-animate="true"}
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+
+<div style="height: 0.5em;"></div>
+<blue>How does Cholesky factorisation affect the economic interpretation?</blue>
+
+:::{.fragment}
+Since the Cholesky factorisation $\mathbf{\Sigma}=C^{\top}C$ assumes that:
+$$C\textsf{ is upper-triangular}\implies C=\begin{bmatrix}
+c_{11} & c_{21} & c_{31}\\
+0 & c_{22} & c_{32}\\
+0 & 0 & c_{33}
+\end{bmatrix} \implies C^{\top}=\begin{bmatrix}
+c_{11} & 0 & 0\\
+c_{21} & c_{22} & 0\\
+c_{31} & c_{32} & c_{33}
+\end{bmatrix}$$
+:::
+
+:::{.fragment}
+and recall we have assumed that
+$$U_{t}=C^{\top}\varepsilon_{t}\quad\implies\quad \begin{bmatrix}U_{Tax,t}\\U_{Govt,t}\\U_{GDP,t}\end{bmatrix}=\begin{bmatrix}c_{11} & 0 & 0\\
+c_{21} & c_{22} & 0\\
+c_{31} & c_{32} & c_{33}
+\end{bmatrix}
+\begin{bmatrix}
+\varepsilon_{Tax,t}\\
+\varepsilon_{Govt,t}\\
+\varepsilon_{GDP,t}
+\end{bmatrix}$$
+:::
+
+## Exercise 1 {auto-animate="true"}
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+
+<div style="height: 0.5em;"></div>
+<blue>How does Cholesky factorisation affect the economic interpretation?</blue>
+
+
+Since the Cholesky factorisation $\mathbf{\Sigma}=C^{\top}C$ assumes that:
+$$C\textsf{ is upper-triangular}\implies C=\begin{bmatrix}
+c_{11} & c_{21} & c_{31}\\
+0 & c_{22} & c_{32}\\
+0 & 0 & c_{33}
+\end{bmatrix} \implies C^{\top}=\begin{bmatrix}
+c_{11} & 0 & 0\\
+c_{21} & c_{22} & 0\\
+c_{31} & c_{32} & c_{33}
+\end{bmatrix}$$
+and recall we have assumed that
+<blue>
+\begin{align*}
+U_{Tax,t}&=c_{11}\varepsilon_{Tax,t}\\
+U_{Govt,t}&=c_{21}\varepsilon_{Tax,t}+c_{22}\varepsilon_{Govt,t}\\
+U_{GDP,t}&=c_{31}\varepsilon_{Tax,t}+c_{32}\varepsilon_{Govt,t}+c_{33}\varepsilon_{GDP,t}
+\end{align*}
+</blue>
+
+
+## Exercise 1 {auto-animate="true"}
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+
+<div style="height: 0.5em;"></div>
+<blue>How does Cholesky factorisation affect the economic interpretation?</blue>
+<blue>
+$$\begin{aligned}
+U_{Tax,t}&=c_{11}\varepsilon_{Tax,t}\\
+U_{Govt,t}&=c_{21}\varepsilon_{Tax,t}+c_{22}\varepsilon_{Govt,t}\\
+U_{GDP,t}&=c_{31}\varepsilon_{Tax,t}+c_{32}\varepsilon_{Govt,t}+c_{33}\varepsilon_{GDP,t}
+\end{aligned}\quad C^{\top}=\begin{bmatrix}c_{11} & 0 & 0\\ c_{21} & c_{22} & 0\\ c_{31} & c_{32} & c_{33}\end{bmatrix}$$
+</blue>
+
+:::{.incremental}
+- The impulse to $\Delta \text{Tax}_{t}$ is $c_{11}$, and this is associated with a contemporaneous impulse $c_{21}$ to $\Delta\text{Govt}_{t}$ and $c_{31}$ to $\Delta\text{GDP}_{t}$
+
+- The impulse to $\Delta \text{Govt}_{t}$ is $c_{22}$, and this is associated with a contemporaneous impulse $c_{32}$ to to $\Delta\text{GDP}_{t}$
+
+- The impulse to $\Delta \text{GDP}_{t}$ is $c_{33}$, with no corresponding change to $\Delta\text{Tax}_{t}$ and $\Delta\text{Govt}_{t}$ 
+:::
+
+:::{.fragment}
+<green>
+Therefore, the Cholesky approach imposes the "ordering" structure
+$$\Delta\text{Tax}_{t}\to\Delta\text{Govt}_{t}\to\Delta\text{GDP}_{t}$$
+</green>
+:::
+
+
+## Exercise 1 {auto-animate="true"}
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+
+<div style="height: 0.5em;"></div>
+<blue>How does Cholesky factorisation affect the economic interpretation?</blue>
+<blue>
+$$\begin{align}
+U_{Tax,t}&=c_{11}\varepsilon_{Tax,t}\\
+U_{Govt,t}&=c_{21}\varepsilon_{Tax,t}+c_{22}\varepsilon_{Govt,t}\\
+U_{GDP,t}&=c_{31}\varepsilon_{Tax,t}+c_{32}\varepsilon_{Govt,t}+c_{33}\varepsilon_{GDP,t}
+\end{align}\quad C^{\top}=\begin{bmatrix}c_{11} & 0 & 0\\ c_{21} & c_{22} & 0\\ c_{31} & c_{32} & c_{33}\end{bmatrix}$$
+</blue>
+
+<green>
+Therefore, the Cholesky approach imposes the "ordering" structure
+$$\Delta\text{Tax}_{t}\to\Delta\text{Govt}_{t}\to\Delta\text{GDP}_{t}$$
+</green>
+
+:::{.fragment}
+<green>
+thus **the ordering of the variables matters**!
+</green>
+:::
+
+:::{.fragment}
+<div class="horizontal-line"></div>
+The selection of ordering is (usually) based on prior economic evidence/conjectures.
+:::
+<div style="height: 0.1em;"></div>
+:::{.fragment}
+In R, the ordering is "specified" through the ordering of columns in the data frame used for VAR estimation.
+:::
+
+
+
+## Exercise 1 {auto-animate="true"}
+
+:::{.callout-question}
+Estimate the VAR(3) model for the growth rates of $\operatorname{Tax}_{t}$, $\operatorname{Govt}_{t}$ and $\operatorname{GDP}_{t}$, and obtain the conditional variance matrix and its Cholesky factorisation.
+:::
+
+<div style="height: 0.5em;"></div>
+:::{.panel-tabset}
+
+## Conditional Variance $\mathbf{\Sigma}$
+```{r}
+library(vars)
+
+# VAR(3) 
+VAR_TGY <- VAR(DY, p=3)
+Sigma <- summary(VAR_TGY)$covres
+print(Sigma)
+```
+```{r echo=FALSE}
+Sigma_1 <- Sigma
+```
+<div class="horizontal-line"></div>
+This is the variance-covariance matrix of the residuals $\mathbf{U}_{t}$ from the VAR(3) equation.
+
+## Cholesky Factorisation $C$
+$$\mathbf{\Sigma}=C^{\top}C$$
+```{r}
+C <- chol(Sigma)
+print(round(C,4))
+```
+<div class="horizontal-line"></div>
+- This matrix corresponds to $C$ above.
+
+- <blue>Interpretation wise, think of it like a "regression table".</blue> The rows corresponds to "impulse/shock emittors" and columns are "shock receivers", both are at time $t$.
+
+## CF Interpretation
+```{r echo=FALSE}
+library(vars)
+
+# VAR(3) 
+VAR_TGY <- VAR(DY, p=3)
+Sigma <- summary(VAR_TGY)$covres
+C <- chol(Sigma)
+print(round(C,4))
+```
+<div class="horizontal-line"></div>
+- <blue>Cholesky Factorisation imposes order: </blue>$\Delta\text{Tax}_{t}\to\Delta\text{Govt}_{t}\to\Delta\text{GDP}_{t}$
+
+- an impulse to the first variable listed in the VAR implies non-zero contemporaneous impulses to the second and third variables (i.e. a $2.127$ unit impulse to `DTax` is associated with $-0.094$ and $0.119$ unit impulses to `DGovt` and `DGDP` respectively);
+
+- an impulse to the second variable implies a non-zero contemporaneous impulse to the third variable, but a zero impulse to the first variable,
+
+- an impulse to the third variable implies zero contemporaneous impulses to both first and second variables.
+
+::: {.absolute top="260px" left="470px" style="font-size: 30px;"}
+::: {style="font-size: 90%;"}
+$$\begin{aligned}
+\hat{U}_{DTax,t}&=2.1271\varepsilon_{DTax,t}\\
+\hat{U}_{DGovt,t}&=-0.0938\varepsilon_{DTax,t}+1.5139\varepsilon_{DGovt,t}\\
+\hat{U}_{DGDP,t}&=0.1192\varepsilon_{DTax,t}+0.1443\varepsilon_{DGovt,t}+0.5724\varepsilon_{DGDP,t}
+\end{aligned}$$
+:::
+:::
+
+## IRF
+:::{.callout-question}
+Compute the full set of impulse responses for the VAR model. (There are 9 of them.)
+:::
+
+<div style="height: 0.5em;"></div>
+The responses associated with the impulses to DTax, DGovt and DGDP are contained in the matrices `IRF$irf$DTax`, `IRF$irf$DGovt`, `IRF$irf$DGDP` respectively.
+<div style="height: 0.5em;"></div>
+```{r}
+# Compute the full set of Impulse Reponses using VAR_TGY:
+IRF <- irf(VAR_TGY, ortho=TRUE, n.ahead=8)
+print(IRF$irf)
+```
+<div style="height: 1em;"></div>
+:::
+
+
+## Exercise 2(a) {auto-animate="true"}
+
+:::{.callout-question}
+Re-estimate the VAR(3) model for the growth rates of GDP, government spending and tax revenue, in that order, and obtain the conditional variance matrix and its Cholesky factorisation, and the full set of impulse responses.
+:::
+
+<div style="height: 0.5em;"></div>
+:::{.panel-tabset}
+## Conditional Variance $\mathbf{\Sigma}$
+```{r}
+VAR_TGY2 <- VAR(DY[,c("DGDP", "DGovt","DTax")], p=3)
+Sigma <- summary(VAR_TGY2)$covres
+print(Sigma)
+```
+<div class="horizontal-line"></div>
+Technically we don’t need to re-estimate the VAR, we could simply reorganise the elements of the matrix $\mathbf{\Sigma}$ to match the re-ordering of the time series. But re-estimation seems easier and less error-prone!
+
+## Cholesky Factorisation $C$
+$$\mathbf{\Sigma}=C^{\top}C$$
+```{r}
+C <- chol(Sigma)
+print(round(C,4))   # the C matrix
+```
+<div class="horizontal-line"></div>
+To aid comparisons, here is the $C$ matrix from Q1:
+```{r echo=FALSE}
+print(round(chol(Sigma_1),4))   # the C matrix
+```
+
+::: {.absolute top="790px" left="470px" style="font-size: 30px;"}
+<blue>Notice the differences in the arrangements of the zeros in the Cholesky Factorisation matrix.</blue>
+:::
+
+
+## IRF
+```{r}
+# Compute the full set of Impulse Reponses using VAR_TGY:
+IRF2 <- irf(VAR_TGY2, ortho=TRUE, n.ahead=8)
+print(IRF2$irf)
+```
+
+::: {.absolute top="600px" left="730px" style="font-size: 32px;"}
+<blue>There is no “right” or “wrong” about the ordering, they are simply different identifying restrictions.</blue>
+:::
+
+:::
+
+
+## Exercise 2(b) {auto-animate="true"}
+:::{.callout-question}
+What are similarities and differences between the sets of impulse responses functions for Tax to a GDP impulse with the two orderings?
+:::
+
+:::{.panel-tabset}
+
+## Plot and Discussions
+```{r echo=FALSE}
+#| fig-width: 12
+#| fig-height: 4
+# Extract Impulse Responses of Interest
+irf_1 <- irf(VAR_TGY, impulse = "DGDP", response = "DTax", n.ahead=8)
+irf_2 <- irf(VAR_TGY2, impulse = "DGDP", response = "DTax", n.ahead=8)
+
+# Extract data
+irf_data1 <- irf_1$irf$DGDP[,"DTax"]
+irf_data2 <- irf_2$irf$DGDP[,"DTax"]
+ci_low1 <- irf_1$Lower$DGDP[,"DTax"]
+ci_high1 <- irf_1$Upper$DGDP[,"DTax"]
+ci_low2 <- irf_2$Lower$DGDP[,"DTax"]
+ci_high2 <- irf_2$Upper$DGDP[,"DTax"]
+h <- seq_along(irf_data1) - 1
+
+# Side-by-side layout
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1), family = "Times")
+
+plot(h, irf_data1, type="l", lwd=2, main="DGDP Impulse (Q1)",
+     ylab="DTax response", xlab="Horizon", ylim=range(ci_low1, ci_high1), col="blue")
+lines(h, ci_low1, lty=2, col="blue")
+lines(h, ci_high1, lty=2, col="blue")
+abline(h=0, lty=3)
+
+plot(h, irf_data2, type="l", lwd=2, main="DGDP Impulse (Q2)",
+     ylab="DTax response", xlab="Horizon", ylim=range(ci_low2, ci_high2),
+     col="blue")
+lines(h, ci_low2, lty=2, col="blue")
+lines(h, ci_high2, lty=2, col="blue")
+abline(h=0, lty=3)
+```
+
+- The main difference between these two responses is in the impulse itself, at $h=0$. 
+  - In the first ordering the impulse is zero because this is the identifying restriction, while in the second ordering the impulse is positive (0.421).
+
+- For $h>1$, the IRFs have very similar shapes and significances.
+  - IRF is significant $\to$ 95% CI does not contain 0
+
+- A positive GDP growth shock is found to have a generally positive effect on tax revenue growth forecasts, especially in the first year (4 quarters) the 2nd and 4th quarter forecasts are significantly higher. 
+
+- After one year <grayed>(or 4 quarters)</grayed> the effect of the GDP impulse on Tax forecasts decays close enough to zero to be insignificant.
+<div style="height: 0.5em;"></div>
+
+## Plot Code
+
+The IRFs can be automatically plotted with `plot()` function (more convenient):
+```{r eval=FALSE}
+# Extract Impulse Responses of Interest
+irf_1 <- irf(VAR_TGY, impulse = "DGDP", response = "DTax", n.ahead=8)
+irf_2 <- irf(VAR_TGY2, impulse = "DGDP", response = "DTax", n.ahead=8)
+
+# Graphical Settings
+par(mar = c(4, 4, 2, 1), family = "Times")
+
+# Plot IRFs
+plot(irf_1, main = "DGDP Impulse (Q1)", ylab = "DTax response")
+plot(irf_2, main = "DGDP Impulse (Q2)", ylab = "DTax response")
+```
+<div style="height: 0.5em;"></div>
+Alternatively, you can plot the IRFs manually (longer code but nicer):
+```{r eval=FALSE}
+# Extract data
+irf_data1 <- irf_1$irf$DGDP[,"DTax"]
+irf_data2 <- irf_2$irf$DGDP[,"DTax"]
+ci_low1 <- irf_1$Lower$DGDP[,"DTax"]
+ci_high1 <- irf_1$Upper$DGDP[,"DTax"]
+ci_low2 <- irf_2$Lower$DGDP[,"DTax"]
+ci_high2 <- irf_2$Upper$DGDP[,"DTax"]
+h <- seq_along(irf_data1) - 1
+
+# Side-by-side layout
+par(mfrow = c(1, 2), mar = c(4, 4, 2, 1), family = "Times")
+
+plot(h, irf_data1, type="l", lwd=2, main="DGDP Impulse (Q1)",
+     ylab="DTax response", xlab="Horizon", ylim=range(ci_low1, ci_high1), col="blue")
+lines(h, ci_low1, lty=2, col="blue")
+lines(h, ci_high1, lty=2, col="blue")
+abline(h=0, lty=3)
+
+plot(h, irf_data2, type="l", lwd=2, main="DGDP Impulse (Q2)",
+     ylab="DTax response", xlab="Horizon", ylim=range(ci_low2, ci_high2),
+     col="blue")
+lines(h, ci_low2, lty=2, col="blue")
+lines(h, ci_high2, lty=2, col="blue")
+abline(h=0, lty=3)
+```
+<div style="height: 1.5em;"></div>
+:::
+
+
+## Exercise 3 {auto-animate="true"}
+:::{.callout-question}
+This type of modelling has been used to evaluate the predicted effects of changes in tax policy on economic growth, eg do higher taxes reduce growth? Use the VAR model to investigate this.
+:::
+<div style="height: 0.2em;"></div>
+First, let's not impose any identifying restrictions (no Cholesky ordering, no causal structure assumption, set `ortho = FALSE`).
+
+:::{.panel-tabset}
+
+## Plot Code
+```{r eval=FALSE}
+VAR_TGY <- VAR(DY, p=3)
+IRF0 <- irf(VAR_TGY, ortho=FALSE, n.ahead=8, impulse = "DTax", 
+            response = "DGDP")
+
+irf_data0 <- IRF0$irf$DTax[,"DGDP"]
+ci_lower0 <- IRF0$Lower$DTax[,"DGDP"]
+ci_upper0 <- IRF0$Upper$DTax[,"DGDP"]
+h <- seq_along(irf_data0) - 1
+
+# Graphical Settings
+par(mfrow = c(1, 1), mar = c(4, 4, 2, 1), family = "Times")
+
+plot(h, irf_data0, type="l", lwd=2, main="DTax impulse (non-orthogonalised)",
+     ylab="DGDP response", xlab="Horizon", ylim=c(-0.1, 0.1), 
+     col="blue")
+lines(h, ci_lower0, lty=2, col="blue")
+lines(h, ci_upper0, lty=2, col="blue")
+abline(h=0, lty=3)
+```
+<div style="height: 1.5em;"></div>
+
+
+## IRF Plot and Notes
+```{r eval=FALSE}
+VAR_TGY <- VAR(DY, p=3)
+IRF0 <- irf(VAR_TGY, ortho=FALSE, n.ahead=8, impulse = "DTax", 
+            response = "DGDP")
+```
+
+```{r echo=FALSE}
+#| fig-width: 10
+#| fig-height: 4
+VAR_TGY <- VAR(DY, p=3)
+IRF0 <- irf(VAR_TGY, ortho=FALSE, n.ahead=8, impulse = "DTax", 
+            response = "DGDP")
+
+irf_data0 <- IRF0$irf$DTax[,"DGDP"]
+ci_lower0 <- IRF0$Lower$DTax[,"DGDP"]
+ci_upper0 <- IRF0$Upper$DTax[,"DGDP"]
+h <- seq_along(irf_data0) - 1
+
+# Graphical Settings
+par(mfrow = c(1, 1), mar = c(4, 4, 2, 1), family = "Times")
+
+plot(h, irf_data0, type="l", lwd=2, main="DTax impulse (non-orthogonalised)",
+     ylab="DGDP response", xlab="Horizon", ylim=c(-0.1, 0.1), 
+     col="blue")
+lines(h, ci_lower0, lty=2, col="blue")
+lines(h, ci_upper0, lty=2, col="blue")
+abline(h=0, lty=3)
+```
+
+:::{.callout-note title="Notes"}
+
+- When there is no Cholesky ordering, the resultant IRFs (mostly) loses a causal interpretation.
+
+- They are nevertheless informative of how GDP tends to move when there is shocks to Tax Revenue in the data (i.e. whether tax changes *help predict* GDP) 
+
+  - $\to$ might suggest evidence of Granger Causality.
+
+- The 95% CI were constructed through Bootstrapping $\to$ there is randomness involved <purple>$\to$ your graph should look overall similar, but not identical to mine.</purple>
+
+:::
+
+<div style="height: 1.5em;"></div>
+
+
+## IRF Plot Interpretation
+```{r echo=FALSE}
+#| fig-width: 10
+#| fig-height: 4
+VAR_TGY <- VAR(DY, p=3)
+IRF0 <- irf(VAR_TGY, ortho=FALSE, n.ahead=8, impulse = "DTax", 
+            response = "DGDP")
+
+irf_data0 <- IRF0$irf$DTax[,"DGDP"]
+ci_lower0 <- IRF0$Lower$DTax[,"DGDP"]
+ci_upper0 <- IRF0$Upper$DTax[,"DGDP"]
+h <- seq_along(irf_data0) - 1
+
+# Graphical Settings
+par(mfrow = c(1, 1), mar = c(4, 4, 2, 1), family = "Times")
+
+plot(h, irf_data0, type="l", lwd=2, main="DTax impulse (non-orthogonalised)",
+     ylab="DGDP response", xlab="Horizon", ylim=c(-0.1, 0.1), 
+     col="blue")
+lines(h, ci_lower0, lty=2, col="blue")
+lines(h, ci_upper0, lty=2, col="blue")
+abline(h=0, lty=3)
+```
+
+There is evidence of a significant downwards revision to DGDP growth forecasts **3 quarters** after a +1 unit tax growth impulse. We may interpret this as some informal evidence for Granger causality from `DTax` to `DGDP`.
+<div style="height: 1.5em;"></div>
+:::
+
+
+
+## Exercise 3 {auto-animate="true"}
+:::{.callout-question}
+This type of modelling has been used to evaluate the predicted effects of changes in tax policy on economic growth, eg do higher taxes reduce growth? Use the VAR model to investigate this.
+:::
+<div style="height: 0.5em;"></div>
+
+<blue>To what extent is this finding robust to impulse orthogonalisation and ordering?</blue>
+
+:::{.panel-tabset}
+
+## What are we doing?
+
+- We are checking the robustness of our findings from the previous slide (when there is no Cholesky ordering).
+
+- We will adopt a “brute force” approach:
+  - Try every possible Cholesky ordering <grayed>(there are 6 of them)</grayed> for IRF paths of $\Delta\mathrm{GDP}_{t}$ responses to +1 unit shock to $\Delta\mathrm{Tax}_{t}$, and see if differences emerge. 
+  
+  $$\begin{aligned}
+  \Delta\mathrm{Tax}_{t}&\to\Delta\mathrm{Govt}_{t}\to\Delta\mathrm{GDP}_{t} & \Delta\mathrm{Tax}_{t}&\to\Delta\mathrm{GDP}_{t}\to\Delta\mathrm{Govt}_{t}\\
+  \Delta\mathrm{Govt}_{t}&\to\Delta\mathrm{Tax}_{t}\to\Delta\mathrm{GDP}_{t} & \Delta\mathrm{Govt}_{t}&\to\Delta\mathrm{GDP}_{t}\to\Delta\mathrm{Tax}_{t}\\ 
+  \Delta\mathrm{GDP}_{t}&\to\Delta\mathrm{Tax}_{t}\to\Delta\mathrm{Govt}_{t} & \Delta\mathrm{GDP}_{t}&\to\Delta\mathrm{Govt}_{t}\to\Delta\mathrm{Tax}_{t}\\
+  \end{aligned}$$
+  - We may call this a “sensitivity analysis” to the ordering.
+
+## Plots
+```{r echo=FALSE}
+#| fig-width: 12
+#| fig-height: 5
+
+# Define all possible orderings
+orderings <- list(
+  c("DTax", "DGovt", "DGDP"),
+  c("DTax", "DGDP", "DGovt"),
+  c("DGovt", "DTax", "DGDP"),
+  c("DGovt", "DGDP", "DTax"),
+  c("DGDP", "DTax", "DGovt"),
+  c("DGDP", "DGovt", "DTax")
+)
+
+# Graphical settings
+par(mfrow = c(2, 3), mar = c(4, 4, 2, 1), family = "Times")
+
+# Loop over each ordering
+for (ord in orderings) {
+  
+  # Estimate VAR(3)
+  VAR_model <- VAR(DY[, ord], p = 3)
+  
+  # Compute IRF (non-orthogonalised)
+  IRF <- irf(VAR_model, ortho = TRUE, n.ahead = 8, 
+             impulse = "DTax", response = "DGDP")
+  
+  # Extract IRF data
+  irf_data <- IRF$irf$DTax[,"DGDP"]
+  ci_lower <- IRF$Lower$DTax[,"DGDP"]
+  ci_upper <- IRF$Upper$DTax[,"DGDP"]
+  h <- seq_along(irf_data) - 1
+  
+  # Plot
+  plot(h, irf_data, type = "l", lwd = 2,
+       main = paste("DTax impulse", "(", paste(ord, collapse = ", "), ") order"),
+       ylab = "DGDP response", ylim = c(-0.2, 0.25),
+       col = "blue")
+  lines(h, ci_lower, lty = 2, col = "blue")
+  lines(h, ci_upper, lty = 2, col = "blue")
+  abline(h = 0, lty = 3)
+}
+
+```
+
+## Plot Code
+```{r eval=FALSE}
+#| fig-width: 12
+#| fig-height: 5
+# Define all possible orderings
+orderings <- list(
+  c("DTax", "DGovt", "DGDP"),
+  c("DTax", "DGDP", "DGovt"),
+  c("DGovt", "DTax", "DGDP"),
+  c("DGovt", "DGDP", "DTax"),
+  c("DGDP", "DTax", "DGovt"),
+  c("DGDP", "DGovt", "DTax")
+)
+
+# Graphical settings
+par(mfrow = c(2, 3), mar = c(4, 4, 2, 1), family = "Times")
+
+# Loop over each ordering
+for (ord in orderings) {
+  
+  # Estimate VAR(3)
+  VAR_model <- VAR(DY[, ord], p = 3)
+  
+  # Compute IRF (non-orthogonalised)
+  IRF <- irf(VAR_model, ortho = TRUE, n.ahead = 8, 
+             impulse = "DTax", response = "DGDP")
+  
+  # Extract IRF data
+  irf_data <- IRF$irf$DTax[,"DGDP"]
+  ci_lower <- IRF$Lower$DTax[,"DGDP"]
+  ci_upper <- IRF$Upper$DTax[,"DGDP"]
+  h <- seq_along(irf_data) - 1
+  
+  # Plot
+  plot(h, irf_data, type = "l", lwd = 2,
+       main = paste("DTax impulse", "(", paste(ord, collapse = ", "), ") order"),
+       ylab = "DGDP response", ylim = c(-0.2, 0.25),
+       col = "blue")
+  lines(h, ci_lower, lty = 2, col = "blue")
+  lines(h, ci_upper, lty = 2, col = "blue")
+  abline(h = 0, lty = 3)
+}
+```
+<div style="height: 1.5em;"></div>
+
+:::
+
+
+## Exercise 3 - Discussion {auto-animate="true"}
+<blue>To what extent is this finding robust to impulse orthogonalisation and ordering?</blue>
+```{r echo=FALSE}
+#| fig-width: 12
+#| fig-height: 5
+# Define all possible orderings
+orderings <- list(
+  c("DTax", "DGovt", "DGDP"),
+  c("DTax", "DGDP", "DGovt"),
+  c("DGovt", "DTax", "DGDP"),
+  c("DGovt", "DGDP", "DTax"),
+  c("DGDP", "DTax", "DGovt"),
+  c("DGDP", "DGovt", "DTax")
+)
+
+# Graphical settings
+par(mfrow = c(2, 3), mar = c(4, 4, 2, 1), family = "Times")
+
+# Loop over each ordering
+for (ord in orderings) {
+  
+  # Estimate VAR(3)
+  VAR_model <- VAR(DY[, ord], p = 3)
+  
+  # Compute IRF (non-orthogonalised)
+  IRF <- irf(VAR_model, ortho = TRUE, n.ahead = 8, 
+             impulse = "DTax", response = "DGDP")
+  
+  # Extract IRF data
+  irf_data <- IRF$irf$DTax[,"DGDP"]
+  ci_lower <- IRF$Lower$DTax[,"DGDP"]
+  ci_upper <- IRF$Upper$DTax[,"DGDP"]
+  h <- seq_along(irf_data) - 1
+  
+  # Plot
+  plot(h, irf_data, type = "l", lwd = 2,
+       main = paste("DTax impulse", "(", paste(ord, collapse = ", "), ") order"),
+       ylab = "DGDP response", ylim = c(-0.2, 0.25),
+       col = "blue")
+  lines(h, ci_lower, lty = 2, col = "blue")
+  lines(h, ci_upper, lty = 2, col = "blue")
+  abline(h = 0, lty = 3)
+}
+```
+
+:::{.incremental}
+
+- When the ordering allows Tax impulses to affect GDP contemporaneously <grayed>(top row)</grayed>, there is weak evidence (0-1 out of 3 orderings) of a negative response of GDP at the 3rd quarter.
+
+- When the ordering prevents Tax impulses from affecting GDP contemporaneously <grayed>(bottom row)</grayed>, there is some evidence (1-2 out of 3 orderings) of a negative response of GDP at the 3rd quarter.
+
+- <blue>There is no definitive answer to this question, but we may say there is some mixed evidence for tax increases having a limited negative effect on future GDP growth.</blue>
+
+:::
+
+
+## Exercise 3 - Further Remarks {auto-animate="true"}
+
+:::{.incremental}
+- <blue>There is generally no “correct” ordering that is universally agreed upon in practice.</blue>
+
+  - In this context macroeconomists may also attempt to order variables according to the plausibility or otherwise of contemporaneous effects.
+  
+  - By $Y=C+I+G+X-M$, we know that an increase in government spending definitely increases GDP. Also, economic growth increases may take some time to result in lower government welfare and support expenditure (eg. unemployment benefits), thus the Cholesky ordering might need to reflect <blue>$\Delta\operatorname{Govt}_{t}\to\Delta\operatorname{GDP}_{t}$</blue>.
+
+  - An increase in economic growth can contemporaneously increase tax revenue to the extent that higher sales and wages may immediately (i.e. within 3 months) result in higher tax revenue through PAYG and GST mechanisms, even though other indirect taxes (e.g. company tax) could take longer and be reflected in later impulse responses. <blue>$\implies \Delta\operatorname{GDP}_{t}\to\Delta\operatorname{Tax}_{t}$</blue>
+  
+- <blue>Putting these together would imply a (Govt, GDP, Tax) ordering.</blue>
+
+- <blue>But of course this logic will not be agreed upon by everybody, and pragmatically it is valuable to check the sensitivity of the results to the ordering.</blue>
+
+- <blue>Also results can be importantly dependent on the choice of variables in the model — adding extra endogenous variables may lead to different results.<blue> <grayed>($\downarrow$ more below)</grayed>
+:::
+:::{.fragment}
+<div class="horizontal-line"></div>
+<blue>**Bottom line:** The selection of Cholesky ordering matters, and should be informed by economic theory and/or empirical evidence.</blue>
+:::
+<div style="height: 1.5em;"></div>
+
+
+## {data-background-color="#000F46"}
+
+::: {style="height:85vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:white;font-size:2em;"}
+**Thank you for coming...**
+
+::: {.fragment}
+and best of luck in your final exams!
+:::
+:::
+
+
+
+
+<script>
+document.querySelectorAll("myimage").forEach(el => {
+  const src = el.getAttribute("src");
+  const width = el.getAttribute("width") || "100%";
+
+  const img = document.createElement("img");
+  img.src = src;
+  img.style.width = width;
+  img.style.maxWidth = "100%";  // prevent overflow
+  el.style.display = "block";
+  el.style.textAlign = "center";
+  
+  el.appendChild(img);
+});
+</script>
